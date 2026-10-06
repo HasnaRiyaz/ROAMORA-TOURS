@@ -589,6 +589,7 @@ const galleryCountryBase = [
 
 ];
 
+
 // total = images + videos
 const galleryCountryConfig = galleryCountryBase.map((country) => ({
   ...country,
