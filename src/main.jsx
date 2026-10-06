@@ -529,11 +529,30 @@ const customerReviews = [
 // OWNER FEEDBACK MEDIA
 // ============================================================
 
-const ownerFeedbackMedia = [
-  { type: "video", src: "/reviews/new.mp4" },
-  { type: "video", src: "/reviews/feedback-02.mp4" },
-  { type: "image", src: "/reviews/feedback-03.jpg" },
+const feedbackMediaCandidates = [
+  { ext: "jpg", type: "image" },
+  { ext: "jpeg", type: "image" },
+  { ext: "png", type: "image" },
+  { ext: "webp", type: "image" },
+  { ext: "avif", type: "image" },
+  { ext: "mp4", type: "video" },
+  { ext: "webm", type: "video" },
+  { ext: "mov", type: "video" },
 ];
+
+const makeFeedbackCandidates = (number) =>
+  feedbackMediaCandidates.map((media) => ({
+    type: media.type,
+    src: `/reviews/review${number}.${media.ext}`,
+  }));
+
+// Feedback files: review1, review2, review3 ...
+// Supports both photos and videos.
+const ownerFeedbackMedia = Array.from({ length: 100 }, (_, index) => ({
+  id: index + 1,
+  number: index + 1,
+  candidates: makeFeedbackCandidates(index + 1),
+}));
 
 // ============================================================
 // GALLERY
@@ -567,15 +586,7 @@ const galleryCountryBase = [
     description:
       "Captured by our Romanian travellers in Sri Lanka — real moments of discovery, connection and the island's unforgettable beauty.",
   },
-  {
-    id: "common",
-    name: "Common",
-    folder: "common",
-    images: range(1, 20),
-    videos: [],
-    description:
-      "A shared collection of Sri Lankan moments — landscapes, people and little details that make every journey feel different.",
-  },
+
 ];
 
 // total = images + videos
@@ -608,6 +619,53 @@ const makeGalleryItems = (country) => {
 };
 
 const roamoraGallery = galleryCountryConfig.flatMap(makeGalleryItems);
+
+// ============================================================
+// FEEDBACK MEDIA LOADER
+// ============================================================
+
+function FeedbackMedia({ item, className = "", onMissing }) {
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const candidate = item.candidates[candidateIndex];
+
+  const handleError = () => {
+    if (candidateIndex < item.candidates.length - 1) {
+      setCandidateIndex((value) => value + 1);
+    } else {
+      onMissing?.(item.id);
+    }
+  };
+
+  if (!candidate) return null;
+
+  if (candidate.type === "video") {
+    return (
+      <video
+        key={candidate.src}
+        className={className}
+        src={candidate.src}
+        muted
+        playsInline
+        preload="metadata"
+        controls={className.includes("viewer")}
+        autoPlay={className.includes("viewer")}
+        onError={handleError}
+      />
+    );
+  }
+
+  return (
+    <img
+      key={candidate.src}
+      className={className}
+      src={candidate.src}
+      alt={`ROAMORA guest feedback ${item.number}`}
+      loading="lazy"
+      draggable={false}
+      onError={handleError}
+    />
+  );
+}
 
 // ============================================================
 // APP
@@ -677,6 +735,12 @@ function App() {
   const [brokenSrcs, setBrokenSrcs] = useState([]);
   const markBroken = (src) =>
     setBrokenSrcs((prev) => (prev.includes(src) ? prev : [...prev, src]));
+
+  // FEEDBACK GALLERY
+  const [feedbackGalleryOpen, setFeedbackGalleryOpen] = useState(false);
+  const [feedbackViewerIndex, setFeedbackViewerIndex] = useState(null);
+  const [feedbackMissing, setFeedbackMissing] = useState([]);
+  const feedbackTouchStart = useRef(null);
 
   // REVIEWS
   const [reviews, setReviews] = useState(customerReviews);
@@ -764,6 +828,98 @@ function App() {
   }, [galleryLightboxIndex, galleryItems.length]);
 
   // ============================================================
+  // FEEDBACK GALLERY VIEWER
+  // ============================================================
+
+  const availableFeedbackItems = ownerFeedbackMedia.filter(
+    (item) => !feedbackMissing.includes(item.id)
+  );
+
+  const activeFeedbackItem =
+    feedbackViewerIndex !== null
+      ? availableFeedbackItems[feedbackViewerIndex]
+      : null;
+
+  const openFeedbackGallery = () => {
+    setFeedbackGalleryOpen(true);
+    setFeedbackViewerIndex(null);
+  };
+
+  const closeFeedbackGallery = () => {
+    setFeedbackGalleryOpen(false);
+    setFeedbackViewerIndex(null);
+  };
+
+  const openFeedbackViewer = (index) => {
+    setFeedbackViewerIndex(index);
+  };
+
+  const closeFeedbackViewer = () => {
+    setFeedbackViewerIndex(null);
+  };
+
+  const showNextFeedback = () => {
+    if (!availableFeedbackItems.length) return;
+
+    setFeedbackViewerIndex((index) =>
+      index === null ? null : (index + 1) % availableFeedbackItems.length
+    );
+  };
+
+  const showPrevFeedback = () => {
+    if (!availableFeedbackItems.length) return;
+
+    setFeedbackViewerIndex((index) =>
+      index === null
+        ? null
+        : (index - 1 + availableFeedbackItems.length) %
+          availableFeedbackItems.length
+    );
+  };
+
+  const markFeedbackMissing = (id) => {
+    setFeedbackMissing((current) =>
+      current.includes(id) ? current : [...current, id]
+    );
+  };
+
+  const handleFeedbackTouchStart = (event) => {
+    const touch = event.touches[0];
+    feedbackTouchStart.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+  };
+
+  const handleFeedbackTouchEnd = (event) => {
+    if (!feedbackTouchStart.current) return;
+
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - feedbackTouchStart.current.x;
+    const dy = touch.clientY - feedbackTouchStart.current.y;
+
+    feedbackTouchStart.current = null;
+
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) showNextFeedback();
+      else showPrevFeedback();
+    }
+  };
+
+  useEffect(() => {
+    if (feedbackViewerIndex === null) return;
+
+    const onKey = (event) => {
+      if (event.key === "ArrowRight") showNextFeedback();
+      if (event.key === "ArrowLeft") showPrevFeedback();
+      if (event.key === "Escape") closeFeedbackViewer();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [feedbackViewerIndex, availableFeedbackItems.length]);
+
+  // ============================================================
   // LOAD REVIEWS
   // ============================================================
 
@@ -837,14 +993,28 @@ function App() {
   // BODY SCROLL LOCK
   useEffect(() => {
     document.body.style.overflow =
-      modal || searchOpen || pickupOpen || reviewOpen || galleryOpen
+      modal ||
+      searchOpen ||
+      pickupOpen ||
+      reviewOpen ||
+      galleryOpen ||
+      feedbackGalleryOpen ||
+      feedbackViewerIndex !== null
         ? "hidden"
         : "";
 
     return () => {
       document.body.style.overflow = "";
     };
-  }, [modal, searchOpen, pickupOpen, reviewOpen, galleryOpen]);
+  }, [
+    modal,
+    searchOpen,
+    pickupOpen,
+    reviewOpen,
+    galleryOpen,
+    feedbackGalleryOpen,
+    feedbackViewerIndex,
+  ]);
 
   // ============================================================
   // NAVIGATION
@@ -1481,47 +1651,55 @@ function App() {
             <div className="owner-feedback-heading">
               <div>
                 <span className="kicker">ROAMORA / UNCUT</span>
-
                 <h3>Voices from the road.</h3>
               </div>
 
               <p>
-                A collection of genuine feedback moments shared with ROAMORA —
-                captured in their own words, photos and videos.
+                Real feedback moments shared by our guests — photos, videos
+                and memories from their Sri Lankan journeys.
               </p>
             </div>
 
-            <div className="owner-feedback-grid">
-              {ownerFeedbackMedia.map((item, index) => (
-                <article
-                  className={`owner-feedback-card owner-feedback-card-${
-                    (index % 5) + 1
-                  }`}
-                  key={`${item.src}-${index}`}
-                >
-                  <div className="owner-feedback-media">
-                    {item.type === "video" ? (
-                      <video
-                        src={item.src}
-                        controls
-                        playsInline
-                        preload="metadata"
-                      />
-                    ) : (
-                      <img src={item.src} alt="ROAMORA customer feedback" />
-                    )}
-
-                    <span className="owner-feedback-tag">
-                      {item.type === "video"
-                        ? "VIDEO FEEDBACK"
-                        : "PHOTO FEEDBACK"}
-                    </span>
-
-                    <span className="owner-feedback-number">0{index + 1}</span>
+            <button
+              type="button"
+              className="owner-feedback-collection-card"
+              onClick={openFeedbackGallery}
+              aria-label="Open ROAMORA guest feedback gallery"
+            >
+              <div className="owner-feedback-preview">
+                {ownerFeedbackMedia.slice(0, 5).map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`owner-feedback-preview-item owner-feedback-preview-${
+                      index + 1
+                    }`}
+                  >
+                    <FeedbackMedia
+                      item={item}
+                      onMissing={markFeedbackMissing}
+                    />
+                    <span>{String(index + 1).padStart(2, "0")}</span>
                   </div>
-                </article>
-              ))}
-            </div>
+                ))}
+
+                <div className="owner-feedback-preview-overlay" />
+              </div>
+
+              <div className="owner-feedback-card-copy">
+                <div>
+                  <span>ROAMORA / GUEST FEEDBACK</span>
+                  <h4>Voices from the road</h4>
+                  <p>
+                    Open the collection to browse guest photos and videos one
+                    by one.
+                  </p>
+                </div>
+
+                <div className="owner-feedback-arrow">
+                  <ArrowRight size={18} />
+                </div>
+              </div>
+            </button>
           </div>
 
           <div className="reviews-trust-row">
@@ -1556,6 +1734,130 @@ function App() {
             className="review-image-lightbox-img"
             onClick={(event) => event.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* FEEDBACK GALLERY */}
+
+      {feedbackGalleryOpen && (
+        <div
+          className="modal-backdrop feedback-gallery-modal"
+          onClick={closeFeedbackGallery}
+        >
+          <div
+            className="feedback-gallery-window"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="feedback-gallery-header">
+              <div>
+                <span className="kicker">ROAMORA / GUEST FEEDBACK</span>
+                <h2>
+                  Voices from
+                  <br />
+                  <span>the road.</span>
+                </h2>
+                <p>
+                  Real photos and videos shared by our guests. Choose any
+                  moment to open it full screen.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="feedback-gallery-close"
+                onClick={closeFeedbackGallery}
+                aria-label="Close feedback gallery"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="feedback-gallery-grid">
+              {availableFeedbackItems.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="feedback-gallery-grid-item"
+                  onClick={() => openFeedbackViewer(index)}
+                >
+                  <FeedbackMedia
+                    item={item}
+                    onMissing={markFeedbackMissing}
+                  />
+
+                  <span className="feedback-gallery-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEEDBACK ITEM VIEWER */}
+
+      {activeFeedbackItem && (
+        <div
+          className="modal-backdrop feedback-viewer-modal"
+          onClick={closeFeedbackViewer}
+        >
+          <button
+            type="button"
+            className="feedback-viewer-close"
+            onClick={closeFeedbackViewer}
+            aria-label="Close feedback viewer"
+          >
+            <X size={20} />
+          </button>
+
+          <button
+            type="button"
+            className="feedback-viewer-nav feedback-viewer-prev"
+            onClick={(event) => {
+              event.stopPropagation();
+              showPrevFeedback();
+            }}
+            aria-label="Previous feedback"
+          >
+            <ChevronLeft size={28} />
+          </button>
+
+          <button
+            type="button"
+            className="feedback-viewer-nav feedback-viewer-next"
+            onClick={(event) => {
+              event.stopPropagation();
+              showNextFeedback();
+            }}
+            aria-label="Next feedback"
+          >
+            <ChevronRight size={28} />
+          </button>
+
+          <div
+            className="feedback-viewer-content"
+            onClick={(event) => event.stopPropagation()}
+            onTouchStart={handleFeedbackTouchStart}
+            onTouchEnd={handleFeedbackTouchEnd}
+          >
+            <div className="feedback-viewer-media">
+              <FeedbackMedia
+                item={activeFeedbackItem}
+                className="feedback-viewer-media-element viewer"
+                onMissing={markFeedbackMissing}
+              />
+            </div>
+
+            <div className="feedback-viewer-footer">
+              <span>ROAMORA / GUEST FEEDBACK</span>
+              <strong>
+                {String(feedbackViewerIndex + 1).padStart(2, "0")} / {
+                  String(availableFeedbackItems.length).padStart(2, "0")
+                }
+              </strong>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3386,3 +3688,5 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   createRoot(rootElement).render(<App />);
 }
+
+
