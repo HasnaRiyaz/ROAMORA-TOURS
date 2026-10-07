@@ -603,6 +603,7 @@ const makeGalleryItems = (country) => {
     src: `/gallery/${country.folder}/${country.folder}-${pad3(n)}.jpeg`,
     title: country.name,
     country: country.id,
+  
   }));
 
   const videos = country.videos.map((n) => ({
